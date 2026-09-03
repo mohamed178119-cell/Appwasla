@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "وصلة — محادثات بالأكواد"
+description = "تطبيق محادثات عربي يتيح لكل نسخة كودًا ثابتًا، ويدعم طلبات التواصل والمجموعات والرسائل المتزامنة بين الأجهزة عبر خادم حقيقي."
+version = "1.0.0"
+id = "artifacts/wasla"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21219
+
+[services.development]
+run = "pnpm --filter @workspace/wasla run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/wasla", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/wasla/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21219"
+BASE_PATH = "/"

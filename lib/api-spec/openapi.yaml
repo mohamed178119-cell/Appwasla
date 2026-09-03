@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: devices
+    description: Device identity and synchronization
+  - name: chats
+    description: Conversations, requests, and messages
 paths:
   /healthz:
     get:
@@ -24,7 +28,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /devices:
+    post:
+      operationId: registerDevice
+      tags: [devices]
+      summary: Register a new app installation
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceInput"
+      responses:
+        "201":
+          description: Registered device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+  /devices/{deviceId}/sync:
+    get:
+      operationId: syncDevice
+      tags: [devices]
+      summary: Fetch the latest device state
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Latest device state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSync"
+  /devices/{deviceId}/presence:
+    patch:
+      operationId: updatePresence
+      tags: [devices]
+      summary: Update online presence
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceInput"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+  /devices/{deviceId}/requests:
+    post:
+      operationId: createChatRequest
+      tags: [chats]
+      summary: Request a conversation with a code
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequestInput"
+      responses:
+        "201":
+          description: Created conversation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRequest"
+  /devices/{deviceId}/groups:
+    post:
+      operationId: createGroup
+      tags: [chats]
+      summary: Create a group conversation
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupInput"
+      responses:
+        "201":
+          description: Created group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+  /requests/{requestId}:
+    patch:
+      operationId: respondToChatRequest
+      tags: [chats]
+      summary: Accept or reject a conversation request
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestResponseInput"
+      responses:
+        "200":
+          description: Updated conversation request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatRequest"
+  /chats/{chatId}/messages:
+    post:
+      operationId: sendMessage
+      tags: [chats]
+      summary: Send a message to an active conversation
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
 components:
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    ChatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +191,160 @@ components:
           type: string
       required:
         - status
+    Device:
+      type: object
+      required: [id, code, displayName, online, createdAt]
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        displayName:
+          type: string
+        online:
+          type: boolean
+        createdAt:
+          type: string
+    DeviceInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 60
+    PresenceInput:
+      type: object
+      required: [online]
+      properties:
+        online:
+          type: boolean
+    Message:
+      type: object
+      required: [id, chatId, senderId, text, createdAt]
+      properties:
+        id:
+          type: string
+        chatId:
+          type: string
+        senderId:
+          type: string
+        senderCode:
+          type: ["string", "null"]
+        text:
+          type: string
+        createdAt:
+          type: string
+    Chat:
+      type: object
+      required: [id, type, name, status, members, messages, updatedAt]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [direct, group]
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending_incoming, pending_outgoing, active, rejected]
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMember"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        updatedAt:
+          type: string
+    ChatMember:
+      type: object
+      required: [deviceId, code, displayName, online]
+      properties:
+        deviceId:
+          type: string
+        code:
+          type: string
+        displayName:
+          type: string
+        online:
+          type: boolean
+    ChatRequest:
+      type: object
+      required: [id, chatId, fromDeviceId, toDeviceId, fromCode, toCode, status, createdAt]
+      properties:
+        id:
+          type: string
+        chatId:
+          type: string
+        fromDeviceId:
+          type: string
+        toDeviceId:
+          type: string
+        fromCode:
+          type: string
+        toCode:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        createdAt:
+          type: string
+    DeviceSync:
+      type: object
+      required: [device, chats, requests]
+      properties:
+        device:
+          $ref: "#/components/schemas/Device"
+        chats:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chat"
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatRequest"
+    ChatRequestInput:
+      type: object
+      required: [targetCode]
+      properties:
+        targetCode:
+          type: string
+          minLength: 4
+          maxLength: 12
+    GroupInput:
+      type: object
+      required: [name, memberCodes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        memberCodes:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+            minLength: 4
+            maxLength: 12
+    RequestResponseInput:
+      type: object
+      required: [deviceId, status]
+      properties:
+        deviceId:
+          type: string
+        status:
+          type: string
+          enum: [accepted, rejected]
+    MessageInput:
+      type: object
+      required: [deviceId, text]
+      properties:
+        deviceId:
+          type: string
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
 
