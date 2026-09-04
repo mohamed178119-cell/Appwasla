@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/wasla-app/"
+title = "وصلة — تطبيق الهاتف"
+description = "تطبيق موبايل عربي للمحادثات بالأكواد، يعمل على Android وiOS ويتصل بنفس خادم وصلة حتى تتواصل كل النسخ معًا."
+version = "1.0.0"
+id = "artifacts/wasla-app"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/wasla-app/" ]
+localPort = 20948
+
+[services.development]
+run = "pnpm --filter @workspace/wasla-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/wasla-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/wasla-app", "run", "serve" ]
+
+[services.env]
+PORT = "20948"
+BASE_PATH = "/wasla-app/"

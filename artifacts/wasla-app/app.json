@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "وصلة — تطبيق الهاتف",
+    "slug": "wasla-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "wasla-app",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.wasla.chat"
+    },
+    "android": { "package": "com.wasla.chat" },
+    "splash": { "backgroundColor": "#0e1727", "image": "./assets/images/icon.png", "resizeMode": "contain" },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
