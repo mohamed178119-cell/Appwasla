@@ -32,7 +32,7 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState('');
   const register = useRegisterDevice();
-  const sync = useSyncDevice(deviceId ?? '', { query: { enabled: !!deviceId, refetchInterval: 10000 } });
+  const sync = useSyncDevice(deviceId ?? '', { query: { queryKey: [`/api/devices/${deviceId ?? ''}/sync`], enabled: !!deviceId, refetchInterval: 10000 } });
   const presence = useUpdatePresence();
   const request = useCreateChatRequest();
   const createGroup = useCreateGroup();
@@ -86,3 +86,209 @@ function Button({ label, icon, onPress, colors, secondary, disabled, testID }: a
 function Empty({ text, action, onPress, colors }: any) { return <View style={styles.empty}><Ionicons name="chatbubble-ellipses-outline" size={34} color={colors.mutedForeground} /><Text style={{ color: colors.mutedForeground, marginVertical: 8 }}>{text}</Text><Pressable testID="retry-button" onPress={onPress}><Text style={{ color: colors.primary }}>{action}</Text></Pressable></View>; }
 function RequestRow({ request, deviceId, respond, colors, onDone }: any) { return <View style={[styles.request, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={{ color: colors.foreground }}>طلب من الرمز {request.fromCode}</Text><Text style={{ color: colors.mutedForeground }}>يريد بدء محادثة معك</Text></View><Pressable testID={`reject-${request.id}`} onPress={() => respond.mutate({ requestId: request.id, data: { deviceId, status: 'rejected' } }, { onSuccess: onDone })}><Ionicons name="close-circle-outline" size={28} color={colors.destructive} /></Pressable><Pressable testID={`accept-${request.id}`} onPress={() => respond.mutate({ requestId: request.id, data: { deviceId, status: 'accepted' } }, { onSuccess: onDone })}><Ionicons name="checkmark-circle-outline" size={28} color={colors.primary} /></Pressable></View>; }
 function FormModal({ kind, onClose, code, setCode, groupName, setGroupName, members, setMembers, onSubmit, colors }: any) { return <Modal transparent animationType="slide" visible onRequestClose={onClose}><View style={styles.overlay}><View style={[styles.sheet, { backgroundColor: colors.card }]}><Pressable testID="close-modal-button" onPress={onClose} style={styles.close}><Ionicons name="close" size={24} color={colors.foreground} /></Pressable><Text style={[styles.heading, { color: colors.foreground }]}>{kind === 'request' ? 'محادثة جديدة' : 'إنشاء مجموعة'}</Text>{kind === 'request' ? <TextInput testID="target-code-input" value={code} onChangeText={setCode} placeholder="رمز الجهاز" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /> : <><TextInput testID="group-name-input" value={groupName} onChangeText={setGroupName} placeholder="اسم المجموعة" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /><TextInput testID="member-codes-input" value={members} onChangeText={setMembers} placeholder="رموز الأعضاء، مفصولة بفاصلة أو مسافة" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /></>}<Button testID="submit-form-button" label="تأكيد" icon="checkmark" onPress={onSubmit} colors={colors} /></View></View></Modal>; }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  brand: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 44,
+    paddingBottom: 34,
+  },
+  title: {
+    fontSize: 38,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 25,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  kicker: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  heading: {
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 26,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderRadius: 12,
+    borderWidth: 1,
+    fontSize: 16,
+    minHeight: 54,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    textAlign: 'right',
+    width: '100%',
+  },
+  messageInput: {
+    borderRadius: 18,
+    flex: 1,
+    fontSize: 16,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    textAlign: 'right',
+  },
+  button: {
+    alignItems: 'center',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 52,
+    paddingHorizontal: 18,
+  },
+  credit: {
+    fontSize: 12,
+    marginTop: 28,
+    textAlign: 'center',
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  codeCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 20,
+    padding: 20,
+  },
+  code: {
+    fontSize: 31,
+    fontWeight: '700',
+    letterSpacing: 3,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  copy: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 7,
+    paddingVertical: 4,
+  },
+  row: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  switch: {
+    borderRadius: 18,
+    height: 32,
+    justifyContent: 'center',
+    padding: 3,
+    width: 56,
+  },
+  knob: {
+    borderRadius: 13,
+    height: 26,
+    width: 26,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 22,
+  },
+  chatRow: {
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 15,
+  },
+  avatar: {
+    alignItems: 'center',
+    borderRadius: 22,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  chatName: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  empty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 48,
+  },
+  request: {
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+    padding: 14,
+  },
+  chatHeader: {
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+  },
+  bubble: {
+    borderRadius: 17,
+    maxWidth: '82%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  composer: {
+    alignItems: 'center',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  send: {
+    alignItems: 'center',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  overlay: {
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    gap: 14,
+    padding: 20,
+    paddingBottom: 34,
+  },
+  close: {
+    alignSelf: 'flex-start',
+    padding: 4,
+  },
+});

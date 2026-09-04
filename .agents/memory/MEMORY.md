@@ -1,0 +1,1 @@
+- [Expo runtime notes](expo-runtime-quirks.md) — Metro can run despite the optional React Native DevTools libglib warning; generated query options may require an explicit queryKey.
