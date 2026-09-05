@@ -1,10 +1,11 @@
 FROM node:22-slim AS base
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable
 
 FROM base AS builder
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
+
 RUN pnpm --filter @workspace/api-server run build
 
 FROM base AS runner
