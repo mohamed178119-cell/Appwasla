@@ -18,7 +18,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
+      - run: pnpm install --no-frozen-lockfile --config.dangerously-allow-all-builds=true
 
       - run: pnpm --filter @workspace/db run push-force
         env:
