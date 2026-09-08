@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center circle (66dp safe zone centered at 54, 54) -->
+    <path
+        android:fillColor="#52E2C7"
+        android:pathData="M54,48 A6,6 0 1,1 54,60 A6,6 0 1,1 54,48 Z" />
+    <!-- Inner signal arcs -->
+    <path
+        android:strokeColor="#52E2C7"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M43,43 A15.5,15.5 0 0,0 43,65" />
+    <path
+        android:strokeColor="#52E2C7"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M65,43 A15.5,15.5 0 0,1 65,65" />
+    <!-- Outer signal arcs -->
+    <path
+        android:strokeColor="#B8A5FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M35,35 A27,27 0 0,0 35,73" />
+    <path
+        android:strokeColor="#B8A5FF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M73,35 A27,27 0 0,1 73,73" />
+</vector>

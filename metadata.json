@@ -1,0 +1,6 @@
+{
+  "name": "Wasla",
+  "description": "Private code-based direct and group messaging app",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
