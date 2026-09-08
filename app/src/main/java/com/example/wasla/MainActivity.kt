@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wasla.ui.components.WaslaToast
 import com.example.wasla.ui.screens.ChatScreen
+import com.example.wasla.ui.screens.CloudSettingsDialog
 import com.example.wasla.ui.screens.HomeScreen
 import com.example.wasla.ui.screens.NewGroupDialog
 import com.example.wasla.ui.screens.NewRequestDialog
@@ -64,6 +65,10 @@ fun WaslaApp(viewModel: WaslaViewModel) {
     val activeChat by viewModel.activeChat.collectAsStateWithLifecycle()
     val showNewRequestDialog by viewModel.showNewRequestDialog.collectAsStateWithLifecycle()
     val showNewGroupDialog by viewModel.showNewGroupDialog.collectAsStateWithLifecycle()
+    val showCloudSettingsDialog by viewModel.showCloudSettingsDialog.collectAsStateWithLifecycle()
+    val cloudStatus by viewModel.cloudStatus.collectAsStateWithLifecycle()
+    val cloudConfig by viewModel.cloudConfig.collectAsStateWithLifecycle()
+    val allProfiles by viewModel.allProfiles.collectAsStateWithLifecycle()
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
 
     LaunchedEffect(toastMessage) {
@@ -122,6 +127,7 @@ fun WaslaApp(viewModel: WaslaViewModel) {
                         chats = chats,
                         requests = requests,
                         currentTab = currentTab,
+                        cloudStatus = cloudStatus,
                         onSelectTab = { tab -> viewModel.selectTab(tab) },
                         onTogglePresence = { viewModel.togglePresence() },
                         onOpenChat = { id -> viewModel.openChat(id) },
@@ -129,6 +135,7 @@ fun WaslaApp(viewModel: WaslaViewModel) {
                         onNewGroup = { viewModel.showNewGroup(true) },
                         onRespondRequest = { id, accept -> viewModel.respondToRequest(id, accept) },
                         onSimulateIncomingRequest = { viewModel.simulateIncomingRequest() },
+                        onOpenCloudSettings = { viewModel.showCloudSettings(true) },
                         onShowToast = { msg -> viewModel.showToast(msg) }
                     )
                 }
@@ -160,6 +167,21 @@ fun WaslaApp(viewModel: WaslaViewModel) {
                         onError = { error -> viewModel.showToast(error) }
                     )
                 }
+            )
+        }
+
+        if (showCloudSettingsDialog && currentDevice != null) {
+            CloudSettingsDialog(
+                config = cloudConfig,
+                status = cloudStatus,
+                currentDevice = currentDevice,
+                allProfiles = allProfiles,
+                onDismiss = { viewModel.showCloudSettings(false) },
+                onSaveUrl = { url -> viewModel.updateCloudServerUrl(url) },
+                onToggleSync = { viewModel.toggleCloudSync() },
+                onManualSync = { viewModel.triggerManualSync() },
+                onSwitchProfile = { id -> viewModel.switchProfile(id) },
+                onCreateTestProfile = { name -> viewModel.createSecondTestDevice(name) }
             )
         }
 

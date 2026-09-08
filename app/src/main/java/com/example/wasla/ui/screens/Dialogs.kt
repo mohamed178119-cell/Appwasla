@@ -37,6 +37,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.example.wasla.data.cloud.CloudConfig
+import com.example.wasla.data.cloud.CloudStatus
+import com.example.wasla.data.cloud.WaslaCloudSyncManager
+import com.example.wasla.data.model.Device
+import com.example.wasla.ui.theme.WaslaAccent
+import com.example.wasla.ui.theme.WaslaOnline
 import com.example.wasla.ui.theme.WaslaCardBorder
 import com.example.wasla.ui.theme.WaslaError
 import com.example.wasla.ui.theme.WaslaOnPrimary
@@ -368,6 +384,410 @@ fun NewGroupDialog(
                     ) {
                         Text("إنشاء المجموعة", fontWeight = FontWeight.Bold)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CloudSettingsDialog(
+    config: com.example.wasla.data.cloud.CloudConfig,
+    status: com.example.wasla.data.cloud.CloudStatus,
+    currentDevice: com.example.wasla.data.model.Device,
+    allProfiles: List<com.example.wasla.data.model.Device>,
+    onDismiss: () -> Unit,
+    onSaveUrl: (String) -> Unit,
+    onToggleSync: () -> Unit,
+    onManualSync: () -> Unit,
+    onSwitchProfile: (String) -> Unit,
+    onCreateTestProfile: (String) -> Unit
+) {
+    var urlText by remember { mutableStateOf(config.serverUrl) }
+    var newProfileName by remember { mutableStateOf("") }
+    var showAddProfile by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = WaslaSurface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (status) {
+                                CloudStatus.CONNECTED -> Icons.Default.CloudDone
+                                CloudStatus.SYNCING -> Icons.Default.Sync
+                                CloudStatus.OFFLINE_LOCAL -> Icons.Default.CloudOff
+                                CloudStatus.ERROR -> Icons.Default.CloudOff
+                            },
+                            contentDescription = null,
+                            tint = when (status) {
+                                CloudStatus.CONNECTED -> WaslaOnline
+                                CloudStatus.SYNCING -> WaslaAccent
+                                CloudStatus.OFFLINE_LOCAL -> WaslaTextTertiary
+                                CloudStatus.ERROR -> WaslaError
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "إعدادات الربط السحابي",
+                            color = WaslaTextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "إإغلاق",
+                            tint = WaslaTextTertiary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Status Banner
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = WaslaSurfaceVariant),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val statusText = when (status) {
+                            com.example.wasla.data.cloud.CloudStatus.CONNECTED -> "🟢 متصل بالسحابة (مزامنة حية)"
+                            com.example.wasla.data.cloud.CloudStatus.SYNCING -> "🟡 جارِ المزامنة الآن..."
+                            com.example.wasla.data.cloud.CloudStatus.OFFLINE_LOCAL -> "⚪ وضع محلي فقط"
+                            com.example.wasla.data.cloud.CloudStatus.ERROR -> "🔴 تعذر الاتصال بالسحابة"
+                        }
+                        Text(
+                            text = statusText,
+                            color = WaslaTextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = config.statusMessage,
+                            color = WaslaTextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Toggle Sync
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "المزامنة بين عدة أجهزة",
+                            color = WaslaTextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "إرسال واستقبال الرسائل والطلبات عبر الإنترنت",
+                            color = WaslaTextTertiary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = config.isEnabled,
+                        onCheckedChange = { onToggleSync() },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = WaslaPrimary,
+                            checkedTrackColor = WaslaPrimary.copy(alpha = 0.3f),
+                            uncheckedThumbColor = WaslaTextTertiary,
+                            uncheckedTrackColor = WaslaSurfaceVariant
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Server URL input
+                Text(
+                    text = "رابط الخادم السحابي / Firebase Realtime DB:",
+                    color = WaslaTextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = WaslaTextPrimary,
+                        unfocusedTextColor = WaslaTextPrimary,
+                        focusedBorderColor = WaslaPrimary,
+                        unfocusedBorderColor = WaslaCardBorder,
+                        focusedContainerColor = WaslaSurfaceVariant,
+                        unfocusedContainerColor = WaslaSurfaceVariant
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            urlText = com.example.wasla.data.cloud.WaslaCloudSyncManager.DEFAULT_FIREBASE_URL
+                            onSaveUrl(urlText)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = WaslaTextSecondary),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+                    ) {
+                        Text("الافتراضي", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { onSaveUrl(urlText) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WaslaPrimary,
+                            contentColor = WaslaOnPrimary
+                        )
+                    ) {
+                        Text("حفظ ومزامنة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Multi-device testing section
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Devices,
+                        contentDescription = null,
+                        tint = WaslaAccent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "اختبار تواصل جهازين (التبديل بين الأجهزة):",
+                        color = WaslaTextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Text(
+                    text = "يمكنك التبديل بين ملفات الأجهزة أو إنشاء جهاز جديد لاختبار إرسال الطلب واستقباله فورياً!",
+                    color = WaslaTextTertiary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                )
+
+                // Existing profiles
+                allProfiles.forEach { profile ->
+                    val isCurrent = profile.id == currentDevice.id
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isCurrent) WaslaPrimary.copy(alpha = 0.12f) else WaslaSurfaceVariant
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isCurrent) WaslaPrimary else WaslaCardBorder
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = profile.displayName,
+                                        color = WaslaTextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (isCurrent) {
+                                        Text(
+                                            text = "(نشط الآن)",
+                                            color = WaslaPrimary,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "الرمز: ${profile.code}",
+                                    color = com.example.wasla.ui.theme.WaslaAccent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (!isCurrent) {
+                                OutlinedButton(
+                                    onClick = {
+                                        onSwitchProfile(profile.id)
+                                        onDismiss()
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = WaslaPrimary),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaPrimary)
+                                ) {
+                                    Text("تبديل لهذا الجهاز", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Create second test device
+                if (showAddProfile) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newProfileName,
+                            onValueChange = { newProfileName = it },
+                            placeholder = { Text("اسم الجهاز الثاني (مثال: هاتف صديقي)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = WaslaTextPrimary,
+                                unfocusedTextColor = WaslaTextPrimary,
+                                focusedBorderColor = com.example.wasla.ui.theme.WaslaAccent,
+                                unfocusedBorderColor = WaslaCardBorder,
+                                focusedContainerColor = WaslaSurfaceVariant,
+                                unfocusedContainerColor = WaslaSurfaceVariant
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showAddProfile = false },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = WaslaTextSecondary),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+                            ) {
+                                Text("إلغاء", fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val name = newProfileName.trim().ifEmpty { "هاتف تجريبي ثاني" }
+                                    onCreateTestProfile(name)
+                                    showAddProfile = false
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1.5f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = WaslaAccent,
+                                    contentColor = WaslaSurface
+                                )
+                            ) {
+                                Text("إنشاء والتبديل إليه", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { showAddProfile = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = WaslaAccent),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WaslaAccent)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("إضافة جهاز جديد لاختبار الربط", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Manual sync button
+                Button(
+                    onClick = {
+                        onManualSync()
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = WaslaSurfaceVariant,
+                        contentColor = WaslaTextPrimary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = WaslaAccent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("فحص السحابة والمزامنة الآن", fontSize = 13.sp)
                 }
             }
         }

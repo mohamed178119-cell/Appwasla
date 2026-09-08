@@ -66,6 +66,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Sync
+import com.example.wasla.data.cloud.CloudStatus
 import com.example.wasla.data.model.Chat
 import com.example.wasla.data.model.ChatRequest
 import com.example.wasla.data.model.Device
@@ -93,6 +99,7 @@ fun HomeScreen(
     chats: List<Chat>,
     requests: List<ChatRequest>,
     currentTab: WaslaTab,
+    cloudStatus: CloudStatus,
     onSelectTab: (WaslaTab) -> Unit,
     onTogglePresence: () -> Unit,
     onOpenChat: (String) -> Unit,
@@ -100,6 +107,7 @@ fun HomeScreen(
     onNewGroup: () -> Unit,
     onRespondRequest: (String, Boolean) -> Unit,
     onSimulateIncomingRequest: () -> Unit,
+    onOpenCloudSettings: () -> Unit,
     onShowToast: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -155,32 +163,81 @@ fun HomeScreen(
                 }
             }
 
-            // Presence Toggle
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { onTogglePresence() }
-                    .testTag("presence_toggle_button"),
-                color = WaslaSurfaceVariant,
-                border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Cloud Status Button
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onOpenCloudSettings() }
+                        .testTag("cloud_status_button"),
+                    color = WaslaSurfaceVariant,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (device.online) WaslaOnline else WaslaOffline)
-                    )
-                    Text(
-                        text = if (device.online) "متصل" else "مخفي",
-                        color = if (device.online) WaslaOnline else WaslaTextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (cloudStatus) {
+                                CloudStatus.CONNECTED -> Icons.Default.CloudDone
+                                CloudStatus.SYNCING -> Icons.Default.Sync
+                                CloudStatus.OFFLINE_LOCAL -> Icons.Default.CloudOff
+                                CloudStatus.ERROR -> Icons.Default.CloudOff
+                            },
+                            contentDescription = null,
+                            tint = when (cloudStatus) {
+                                CloudStatus.CONNECTED -> WaslaOnline
+                                CloudStatus.SYNCING -> WaslaAccent
+                                CloudStatus.OFFLINE_LOCAL -> WaslaTextTertiary
+                                CloudStatus.ERROR -> WaslaError
+                            },
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = when (cloudStatus) {
+                                CloudStatus.CONNECTED -> "سحابة"
+                                CloudStatus.SYNCING -> "مزامنة"
+                                CloudStatus.OFFLINE_LOCAL -> "محلي"
+                                CloudStatus.ERROR -> "غير متصل"
+                            },
+                            color = WaslaTextPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Presence Toggle
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onTogglePresence() }
+                        .testTag("presence_toggle_button"),
+                    color = WaslaSurfaceVariant,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (device.online) WaslaOnline else WaslaOffline)
+                        )
+                        Text(
+                            text = if (device.online) "متصل" else "مخفي",
+                            color = if (device.online) WaslaOnline else WaslaTextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -285,6 +342,7 @@ fun HomeScreen(
 
                 WaslaTab.ABOUT -> AboutTabContent(
                     device = device,
+                    onOpenCloudSettings = onOpenCloudSettings,
                     onCopyCode = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Wasla Code", device.code))
@@ -788,6 +846,7 @@ private fun RequestsTabContent(
 @Composable
 private fun AboutTabContent(
     device: Device,
+    onOpenCloudSettings: () -> Unit,
     onCopyCode: () -> Unit
 ) {
     LazyColumn(
@@ -797,6 +856,77 @@ private fun AboutTabContent(
     ) {
         item {
             WaslaCodeCard(code = device.code, onCopy = onCopyCode)
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = WaslaSurface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = null,
+                                tint = WaslaPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                text = "المزامنة السحابية وتوصيل عدة أجهزة",
+                                color = WaslaTextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "يتيح هذا التطبيق الآن الاتصال بخادم سحابي (Firebase) لتبادل الرسائل والطلبات بين أجهزة وهواتف مختلفة حقيقية في أي مكان عبر الإنترنت.",
+                        color = WaslaTextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp
+                    )
+
+                    Button(
+                        onClick = onOpenCloudSettings,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WaslaSurfaceVariant,
+                            contentColor = WaslaTextPrimary
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Devices,
+                            contentDescription = null,
+                            tint = WaslaAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "إعدادات السحابة وتجربة جهازين",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
 
         item {

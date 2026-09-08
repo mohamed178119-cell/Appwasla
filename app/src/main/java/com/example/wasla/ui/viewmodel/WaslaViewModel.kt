@@ -3,6 +3,8 @@ package com.example.wasla.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.wasla.data.cloud.CloudConfig
+import com.example.wasla.data.cloud.CloudStatus
 import com.example.wasla.data.model.Chat
 import com.example.wasla.data.model.ChatRequest
 import com.example.wasla.data.model.Device
@@ -27,6 +29,9 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
     val device: StateFlow<Device?> = repository.device
     val chats: StateFlow<List<Chat>> = repository.chats
     val requests: StateFlow<List<ChatRequest>> = repository.requests
+    val allProfiles: StateFlow<List<Device>> = repository.allProfiles
+    val cloudStatus: StateFlow<CloudStatus> = repository.cloudStatus
+    val cloudConfig: StateFlow<CloudConfig> = repository.cloudConfig
 
     private val _currentTab = MutableStateFlow(WaslaTab.CHATS)
     val currentTab: StateFlow<WaslaTab> = _currentTab.asStateFlow()
@@ -43,6 +48,9 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _showNewGroupDialog = MutableStateFlow(false)
     val showNewGroupDialog: StateFlow<Boolean> = _showNewGroupDialog.asStateFlow()
+
+    private val _showCloudSettingsDialog = MutableStateFlow(false)
+    val showCloudSettingsDialog: StateFlow<Boolean> = _showCloudSettingsDialog.asStateFlow()
 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
@@ -67,6 +75,10 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
         _showNewGroupDialog.value = show
     }
 
+    fun showCloudSettings(show: Boolean) {
+        _showCloudSettingsDialog.value = show
+    }
+
     fun showToast(msg: String) {
         _toastMessage.value = msg
     }
@@ -78,7 +90,7 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
     fun register(name: String) {
         viewModelScope.launch {
             repository.registerDevice(name)
-            showToast("تم إنشاء وصلتك الخاصة بنجاح")
+            showToast("تم إنشاء وصلتك الخاصة وتفعيل المزامنة السحابية")
         }
     }
 
@@ -86,14 +98,14 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
         val current = device.value ?: return
         val newStatus = !current.online
         repository.updatePresence(newStatus)
-        showToast(if (newStatus) "أنت متصل الآن" else "ظهورك الآن مخفي")
+        showToast(if (newStatus) "أنت متصل الآن على السحابة" else "ظهورك الآن مخفي")
     }
 
     fun sendChatRequest(targetCode: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         val result = repository.createChatRequest(targetCode)
         if (result.isSuccess) {
             _showNewRequestDialog.value = false
-            showToast("تم إرسال الطلب — بانتظار الرد")
+            showToast("تم إرسال الطلب عبر السحابة — بانتظار الطرف الآخر")
             onSuccess()
         } else {
             onError(result.exceptionOrNull()?.message ?: "تعذر إرسال الطلب")
@@ -108,7 +120,7 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
             if (newChat != null) {
                 _activeChatId.value = newChat.id
             }
-            showToast("تم إنشاء المجموعة")
+            showToast("تم إنشاء المجموعة ومزامنتها سحابياً")
             onSuccess()
         } else {
             onError(result.exceptionOrNull()?.message ?: "تعذر إنشاء المجموعة")
@@ -117,7 +129,7 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun respondToRequest(requestId: String, accept: Boolean) {
         repository.respondToRequest(requestId, accept)
-        showToast(if (accept) "تم قبول الطلب، المحادثة جاهزة" else "تم تجاهل الطلب")
+        showToast(if (accept) "تم قبول الطلب، المحادثة جاهزة ومحدثة سحابياً" else "تم تجاهل الطلب")
     }
 
     fun sendMessage(chatId: String, text: String) {
@@ -127,5 +139,35 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
     fun simulateIncomingRequest() {
         repository.simulateIncomingNewRequest()
         showToast("وصل طلب محادثة جديد!")
+    }
+
+    fun updateCloudServerUrl(url: String) {
+        repository.updateCloudServerUrl(url)
+        showToast("تم حفظ رابط الخادم السحابي وجارِ المزامنة")
+    }
+
+    fun toggleCloudSync() {
+        val currentEnabled = cloudConfig.value.isEnabled
+        repository.setCloudSyncEnabled(!currentEnabled)
+        showToast(if (!currentEnabled) "تم تفعيل المزامنة السحابية" else "تم إيقاف المزامنة السحابية (وضع محلي)")
+    }
+
+    fun triggerManualSync() {
+        repository.triggerCloudSync()
+        showToast("جارِ مزامنة الرسائل والطلبات مع السحابة...")
+    }
+
+    fun switchProfile(deviceId: String) {
+        repository.switchProfile(deviceId)
+        _activeChatId.value = null
+        showToast("تم تبديل الملف النشط إلى هذا الجهاز")
+    }
+
+    fun createSecondTestDevice(name: String) {
+        viewModelScope.launch {
+            val newDev = repository.createNewProfile(name)
+            _activeChatId.value = null
+            showToast("تم إنشاء جهاز تجريبي جديد: ${newDev.code}")
+        }
     }
 }

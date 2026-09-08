@@ -94,6 +94,16 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
         onCreate(db)
     }
 
+    private val sharedPrefs = context.getSharedPreferences("wasla_db_prefs", Context.MODE_PRIVATE)
+
+    fun setActiveDeviceId(deviceId: String) {
+        sharedPrefs.edit().putString("active_device_id", deviceId).apply()
+    }
+
+    fun getActiveDeviceId(): String? {
+        return sharedPrefs.getString("active_device_id", null)
+    }
+
     // Devices
     fun saveDevice(device: Device) {
         writableDatabase.use { db ->
@@ -106,15 +116,25 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
             }
             db.insertWithOnConflict("devices", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         }
+        if (getActiveDeviceId() == null) {
+            setActiveDeviceId(device.id)
+        }
     }
 
     fun getDevice(): Device? {
+        val activeId = getActiveDeviceId()
         readableDatabase.use { db ->
-            val cursor = db.query("devices", null, null, null, null, null, "created_at ASC", "1")
+            val cursor = if (activeId != null) {
+                db.query("devices", null, "id = ?", arrayOf(activeId), null, null, null)
+            } else {
+                db.query("devices", null, null, null, null, null, "created_at ASC", "1")
+            }
             cursor.use {
                 if (it.moveToFirst()) {
+                    val id = it.getString(it.getColumnIndexOrThrow("id"))
+                    if (activeId == null) setActiveDeviceId(id)
                     return Device(
-                        id = it.getString(it.getColumnIndexOrThrow("id")),
+                        id = id,
                         code = it.getString(it.getColumnIndexOrThrow("code")),
                         displayName = it.getString(it.getColumnIndexOrThrow("display_name")),
                         online = it.getInt(it.getColumnIndexOrThrow("online")) == 1,
@@ -124,6 +144,27 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
             }
         }
         return null
+    }
+
+    fun getAllDevices(): List<Device> {
+        val list = mutableListOf<Device>()
+        readableDatabase.use { db ->
+            val cursor = db.query("devices", null, null, null, null, null, "created_at ASC")
+            cursor.use {
+                while (it.moveToNext()) {
+                    list.add(
+                        Device(
+                            id = it.getString(it.getColumnIndexOrThrow("id")),
+                            code = it.getString(it.getColumnIndexOrThrow("code")),
+                            displayName = it.getString(it.getColumnIndexOrThrow("display_name")),
+                            online = it.getInt(it.getColumnIndexOrThrow("online")) == 1,
+                            createdAt = it.getLong(it.getColumnIndexOrThrow("created_at"))
+                        )
+                    )
+                }
+            }
+        }
+        return list
     }
 
     fun updatePresence(deviceId: String, online: Boolean) {

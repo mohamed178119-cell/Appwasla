@@ -1,6 +1,9 @@
 package com.example.wasla.data.repository
 
 import android.content.Context
+import com.example.wasla.data.cloud.CloudConfig
+import com.example.wasla.data.cloud.CloudStatus
+import com.example.wasla.data.cloud.WaslaCloudSyncManager
 import com.example.wasla.data.db.WaslaDatabaseHelper
 import com.example.wasla.data.model.Chat
 import com.example.wasla.data.model.ChatMember
@@ -19,6 +22,7 @@ import java.util.UUID
 
 class WaslaRepository(context: Context) {
     private val dbHelper = WaslaDatabaseHelper(context)
+    private val cloudSyncManager = WaslaCloudSyncManager(context, dbHelper)
     private val random = SecureRandom()
     private val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -32,7 +36,16 @@ class WaslaRepository(context: Context) {
     private val _requests = MutableStateFlow<List<ChatRequest>>(emptyList())
     val requests: StateFlow<List<ChatRequest>> = _requests.asStateFlow()
 
+    private val _allProfiles = MutableStateFlow<List<Device>>(emptyList())
+    val allProfiles: StateFlow<List<Device>> = _allProfiles.asStateFlow()
+
+    val cloudStatus: StateFlow<CloudStatus> = cloudSyncManager.cloudStatus
+    val cloudConfig: StateFlow<CloudConfig> = cloudSyncManager.config
+
     init {
+        cloudSyncManager.onDataSynchronized = {
+            refreshData()
+        }
         loadInitialData()
     }
 
@@ -41,6 +54,7 @@ class WaslaRepository(context: Context) {
             val currentDevice = dbHelper.getDevice()
             _device.value = currentDevice
             refreshData()
+            cloudSyncManager.triggerImmediateSync()
         }
     }
 
@@ -61,13 +75,40 @@ class WaslaRepository(context: Context) {
             createdAt = System.currentTimeMillis()
         )
         dbHelper.saveDevice(newDevice)
+        dbHelper.setActiveDeviceId(newDevice.id)
         _device.value = newDevice
 
-        // Seed an initial friendly welcome contact & request so the user has an immediate interactive experience
         seedWelcomeExperience(newDevice)
 
         refreshData()
+        cloudSyncManager.triggerImmediateSync()
         return newDevice
+    }
+
+    fun createNewProfile(name: String): Device {
+        val trimmed = name.trim().ifEmpty { "جهاز تجريبي" }
+        val newDevice = Device(
+            id = UUID.randomUUID().toString(),
+            code = generateCode(),
+            displayName = trimmed,
+            online = true,
+            createdAt = System.currentTimeMillis()
+        )
+        dbHelper.saveDevice(newDevice)
+        dbHelper.setActiveDeviceId(newDevice.id)
+        _device.value = newDevice
+
+        refreshData()
+        cloudSyncManager.triggerImmediateSync()
+        return newDevice
+    }
+
+    fun switchProfile(deviceId: String) {
+        dbHelper.setActiveDeviceId(deviceId)
+        val switched = dbHelper.getDevice()
+        _device.value = switched
+        refreshData()
+        cloudSyncManager.triggerImmediateSync()
     }
 
     private fun seedWelcomeExperience(currentDevice: Device) {
@@ -75,7 +116,7 @@ class WaslaRepository(context: Context) {
         val partnerCode = "SAAD-77"
         val partnerName = "محمد سعد"
 
-        // 1. A welcome active chat
+        // Welcome active chat
         val chatId = UUID.randomUUID().toString()
         val chat = Chat(
             id = chatId,
@@ -115,59 +156,10 @@ class WaslaRepository(context: Context) {
                 chatId = chatId,
                 senderId = partnerId,
                 senderCode = partnerCode,
-                text = "أهلاً بك في وصلة! هذا كودك الثابت، شاركه مع من تثق لبدء محادثات خاصة.",
+                text = "أهلاً بك في وصلة! أصبح التطبيق متصلاً بالسحابة لمزامنة الرسائل فورياً مع أي هاتف آخر.",
                 createdAt = System.currentTimeMillis() - 60000
             )
         )
-
-        // 2. An incoming request from another contact to demonstrate accept/reject flow
-        val senderId = UUID.randomUUID().toString()
-        val senderCode = "NOOR-39"
-        val reqChatId = UUID.randomUUID().toString()
-
-        val reqChat = Chat(
-            id = reqChatId,
-            type = "direct",
-            name = "نور",
-            status = "pending_incoming",
-            updatedAt = System.currentTimeMillis()
-        )
-        dbHelper.saveChat(reqChat)
-
-        dbHelper.saveChatMember(
-            ChatMember(
-                id = UUID.randomUUID().toString(),
-                chatId = reqChatId,
-                deviceId = currentDevice.id,
-                code = currentDevice.code,
-                displayName = currentDevice.displayName,
-                online = currentDevice.online,
-                status = "pending_incoming"
-            )
-        )
-        dbHelper.saveChatMember(
-            ChatMember(
-                id = UUID.randomUUID().toString(),
-                chatId = reqChatId,
-                deviceId = senderId,
-                code = senderCode,
-                displayName = "نور",
-                online = true,
-                status = "pending_outgoing"
-            )
-        )
-
-        val chatReq = ChatRequest(
-            id = UUID.randomUUID().toString(),
-            chatId = reqChatId,
-            fromDeviceId = senderId,
-            toDeviceId = currentDevice.id,
-            fromCode = senderCode,
-            toCode = currentDevice.code,
-            status = "pending",
-            createdAt = System.currentTimeMillis() - 300000
-        )
-        dbHelper.saveRequest(chatReq)
     }
 
     fun updatePresence(online: Boolean) {
@@ -175,6 +167,7 @@ class WaslaRepository(context: Context) {
         val updated = current.copy(online = online)
         dbHelper.updatePresence(current.id, online)
         _device.value = updated
+        cloudSyncManager.triggerImmediateSync()
     }
 
     fun createChatRequest(targetCode: String): Result<ChatRequest> {
@@ -239,23 +232,8 @@ class WaslaRepository(context: Context) {
 
         refreshData()
 
-        // Auto-accept simulation after 4 seconds to simulate the remote peer accepting!
-        scope.launch {
-            delay(4000)
-            dbHelper.updateRequestStatus(requestId, "accepted")
-            dbHelper.updateChatStatus(chatId, "active")
-            dbHelper.saveMessage(
-                Message(
-                    id = UUID.randomUUID().toString(),
-                    chatId = chatId,
-                    senderId = targetDeviceId,
-                    senderCode = normalizedCode,
-                    text = "تم قبول طلب المحادثة! مرحباً بك.",
-                    createdAt = System.currentTimeMillis()
-                )
-            )
-            refreshData()
-        }
+        // Upload to cloud so the recipient device receives it!
+        cloudSyncManager.uploadChatRequest(request)
 
         return Result.success(request)
     }
@@ -282,7 +260,6 @@ class WaslaRepository(context: Context) {
         )
         dbHelper.saveChat(chat)
 
-        // Add creator
         dbHelper.saveChatMember(
             ChatMember(
                 id = UUID.randomUUID().toString(),
@@ -295,7 +272,6 @@ class WaslaRepository(context: Context) {
             )
         )
 
-        // Add group members
         cleanCodes.forEach { code ->
             dbHelper.saveChatMember(
                 ChatMember(
@@ -310,16 +286,16 @@ class WaslaRepository(context: Context) {
             )
         }
 
-        dbHelper.saveMessage(
-            Message(
-                id = UUID.randomUUID().toString(),
-                chatId = chatId,
-                senderId = current.id,
-                senderCode = current.code,
-                text = "تم إنشاء مجموعة $trimmedName",
-                createdAt = System.currentTimeMillis()
-            )
+        val firstMsg = Message(
+            id = UUID.randomUUID().toString(),
+            chatId = chatId,
+            senderId = current.id,
+            senderCode = current.code,
+            text = "تم إنشاء مجموعة $trimmedName",
+            createdAt = System.currentTimeMillis()
         )
+        dbHelper.saveMessage(firstMsg)
+        cloudSyncManager.uploadMessage(firstMsg)
 
         refreshData()
         return Result.success(dbHelper.getChatById(chatId) ?: chat)
@@ -334,17 +310,18 @@ class WaslaRepository(context: Context) {
             val chatStatus = if (accept) "active" else "rejected"
             dbHelper.updateChatStatus(request.chatId, chatStatus)
             if (accept) {
-                dbHelper.saveMessage(
-                    Message(
-                        id = UUID.randomUUID().toString(),
-                        chatId = request.chatId,
-                        senderId = request.fromDeviceId,
-                        senderCode = request.fromCode,
-                        text = "مرحباً! بدأت المحادثة الخاصة بيننا.",
-                        createdAt = System.currentTimeMillis()
-                    )
+                val acceptMsg = Message(
+                    id = UUID.randomUUID().toString(),
+                    chatId = request.chatId,
+                    senderId = request.toDeviceId,
+                    senderCode = request.toCode,
+                    text = "تم قبول طلب المحادثة! مرحباً بك.",
+                    createdAt = System.currentTimeMillis()
                 )
+                dbHelper.saveMessage(acceptMsg)
+                cloudSyncManager.uploadMessage(acceptMsg)
             }
+            cloudSyncManager.uploadRequestStatus(request, status)
         }
         refreshData()
     }
@@ -365,32 +342,8 @@ class WaslaRepository(context: Context) {
         dbHelper.saveMessage(message)
         refreshData()
 
-        // Simulate smart peer response after a realistic delay
-        val chat = dbHelper.getChatById(chatId) ?: return
-        val otherMember = chat.members.firstOrNull { it.deviceId != current.id }
-        if (otherMember != null && chat.status == "active") {
-            scope.launch {
-                delay(1200)
-                val peerReplies = listOf(
-                    "أهلاً بك! وصلت رسالتك بوضوح.",
-                    "وصلة ممتازة، التواصل بهدوء هنا رائع!",
-                    "تم الاستلام، شكراً لك.",
-                    "أتفق معك تماماً 👍",
-                    "كل شيء يعمل بسلاسة عبر كود وصلة الخاص."
-                )
-                val replyText = peerReplies.random()
-                val replyMessage = Message(
-                    id = UUID.randomUUID().toString(),
-                    chatId = chatId,
-                    senderId = otherMember.deviceId,
-                    senderCode = otherMember.code,
-                    text = replyText,
-                    createdAt = System.currentTimeMillis()
-                )
-                dbHelper.saveMessage(replyMessage)
-                refreshData()
-            }
-        }
+        // Upload message to cloud so other device receives it in real-time
+        cloudSyncManager.uploadMessage(message)
     }
 
     fun simulateIncomingNewRequest() {
@@ -446,8 +399,21 @@ class WaslaRepository(context: Context) {
         refreshData()
     }
 
+    fun updateCloudServerUrl(url: String) {
+        cloudSyncManager.updateServerUrl(url)
+    }
+
+    fun setCloudSyncEnabled(enabled: Boolean) {
+        cloudSyncManager.setCloudEnabled(enabled)
+    }
+
+    fun triggerCloudSync() {
+        cloudSyncManager.triggerImmediateSync()
+    }
+
     fun refreshData() {
         _chats.value = dbHelper.getAllChats()
         _requests.value = dbHelper.getAllRequests()
+        _allProfiles.value = dbHelper.getAllDevices()
     }
 }
