@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mail
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhoneIphone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -53,7 +55,12 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,11 +110,12 @@ fun HomeScreen(
     onSelectTab: (WaslaTab) -> Unit,
     onTogglePresence: () -> Unit,
     onOpenChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit,
     onNewRequest: () -> Unit,
     onNewGroup: () -> Unit,
     onRespondRequest: (String, Boolean) -> Unit,
     onSimulateIncomingRequest: () -> Unit,
-    onOpenCloudSettings: () -> Unit,
+    onOpenCloudSettings: () -> Unit = {},
     onShowToast: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -163,81 +171,32 @@ fun HomeScreen(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Clean Presence Toggle (Server details are hidden like WhatsApp)
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onTogglePresence() }
+                    .testTag("presence_toggle_button"),
+                color = WaslaSurfaceVariant,
+                border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
             ) {
-                // Cloud Status Button
-                Surface(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onOpenCloudSettings() }
-                        .testTag("cloud_status_button"),
-                    color = WaslaSurfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = when (cloudStatus) {
-                                CloudStatus.CONNECTED -> Icons.Default.CloudDone
-                                CloudStatus.SYNCING -> Icons.Default.Sync
-                                CloudStatus.OFFLINE_LOCAL -> Icons.Default.CloudOff
-                                CloudStatus.ERROR -> Icons.Default.CloudOff
-                            },
-                            contentDescription = null,
-                            tint = when (cloudStatus) {
-                                CloudStatus.CONNECTED -> WaslaOnline
-                                CloudStatus.SYNCING -> WaslaAccent
-                                CloudStatus.OFFLINE_LOCAL -> WaslaTextTertiary
-                                CloudStatus.ERROR -> WaslaError
-                            },
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            text = when (cloudStatus) {
-                                CloudStatus.CONNECTED -> "سحابة"
-                                CloudStatus.SYNCING -> "مزامنة"
-                                CloudStatus.OFFLINE_LOCAL -> "محلي"
-                                CloudStatus.ERROR -> "غير متصل"
-                            },
-                            color = WaslaTextPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Presence Toggle
-                Surface(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onTogglePresence() }
-                        .testTag("presence_toggle_button"),
-                    color = WaslaSurfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, WaslaCardBorder)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(if (device.online) WaslaOnline else WaslaOffline)
-                        )
-                        Text(
-                            text = if (device.online) "متصل" else "مخفي",
-                            color = if (device.online) WaslaOnline else WaslaTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (device.online) WaslaOnline else WaslaOffline)
+                    )
+                    Text(
+                        text = if (device.online) "متصل" else "مخفي",
+                        color = if (device.online) WaslaOnline else WaslaTextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -323,6 +282,7 @@ fun HomeScreen(
                     device = device,
                     chats = chats,
                     onOpenChat = onOpenChat,
+                    onDeleteChat = onDeleteChat,
                     onNewRequest = onNewRequest,
                     onNewGroup = onNewGroup,
                     onCopyCode = {
@@ -359,10 +319,13 @@ private fun ChatsTabContent(
     device: Device,
     chats: List<Chat>,
     onOpenChat: (String) -> Unit,
+    onDeleteChat: (String) -> Unit,
     onNewRequest: () -> Unit,
     onNewGroup: () -> Unit,
     onCopyCode: () -> Unit
 ) {
+    var chatPendingDeletion by remember { mutableStateOf<Chat?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -550,8 +513,15 @@ private fun ChatsTabContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val previewText = when {
+                                    lastMessage == null -> "لا توجد رسائل بعد"
+                                    !lastMessage.imageUri.isNullOrBlank() && lastMessage.text.isNotBlank() -> "📷 ${lastMessage.text}"
+                                    !lastMessage.imageUri.isNullOrBlank() -> "📷 صورة"
+                                    else -> lastMessage.text
+                                }
+
                                 Text(
-                                    text = lastMessage?.text ?: "لا توجد رسائل بعد",
+                                    text = previewText,
                                     color = WaslaTextSecondary,
                                     fontSize = 13.sp,
                                     maxLines = 1,
@@ -586,12 +556,72 @@ private fun ChatsTabContent(
                                         )
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                IconButton(
+                                    onClick = { chatPendingDeletion = chat },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .testTag("delete_chat_${chat.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = "حذف المحادثة",
+                                        tint = WaslaTextTertiary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Confirmation dialog for deleting chat from Home Screen
+    if (chatPendingDeletion != null) {
+        val targetChat = chatPendingDeletion!!
+        AlertDialog(
+            onDismissRequest = { chatPendingDeletion = null },
+            title = {
+                Text(
+                    text = "حذف المحادثة؟",
+                    color = WaslaTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "هل تريد حذف المحادثة مع «${targetChat.name}»؟ سيتم مسح كافة الرسائل والصور نهائياً.",
+                    color = WaslaTextSecondary,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val chatId = targetChat.id
+                        chatPendingDeletion = null
+                        onDeleteChat(chatId)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = WaslaError,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("حذف", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { chatPendingDeletion = null }) {
+                    Text("إلغاء", color = WaslaTextSecondary)
+                }
+            },
+            containerColor = WaslaSurface,
+            shape = RoundedCornerShape(18.dp)
+        )
     }
 }
 
@@ -695,17 +725,17 @@ private fun RequestsTabContent(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                WaslaAvatar(name = req.fromCode, size = 42.dp)
+                                val senderTitle = if (req.fromDisplayName.isNotBlank()) req.fromDisplayName else "وصلة ${req.fromCode}"
+                                WaslaAvatar(name = senderTitle, size = 42.dp)
                                 Column {
                                     Text(
-                                        text = "طلب من: ${req.fromCode}",
+                                        text = senderTitle,
                                         color = WaslaTextPrimary,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        fontFamily = FontFamily.Monospace
+                                        fontSize = 15.sp
                                     )
                                     Text(
-                                        text = FormatUtils.formatTime(req.createdAt),
+                                        text = "كود: ${req.fromCode} • ${FormatUtils.formatTime(req.createdAt)}",
                                         color = WaslaTextTertiary,
                                         fontSize = 11.sp
                                     )
@@ -806,15 +836,15 @@ private fun RequestsTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
+                            val recipientLabel = if (req.toDisplayName.isNotBlank()) req.toDisplayName else req.toCode
                             Text(
-                                text = "المرسل إليه: ${req.toCode}",
+                                text = "إلى: $recipientLabel",
                                 color = WaslaTextPrimary,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                                fontFamily = FontFamily.Monospace
+                                fontSize = 14.sp
                             )
                             Text(
-                                text = FormatUtils.formatDate(req.createdAt),
+                                text = "كود: ${req.toCode} • ${FormatUtils.formatDate(req.createdAt)}",
                                 color = WaslaTextTertiary,
                                 fontSize = 11.sp
                             )

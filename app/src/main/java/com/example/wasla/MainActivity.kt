@@ -105,6 +105,11 @@ fun WaslaApp(viewModel: WaslaViewModel) {
                         device = currentDevice,
                         onBack = { viewModel.closeChat() },
                         onSendMessage = { text -> viewModel.sendMessage(selectedChat.id, text) },
+                        onSendImage = { imagePath, caption -> viewModel.sendImageMessage(selectedChat.id, imagePath, caption) },
+                        onDeleteChat = {
+                            viewModel.deleteChat(selectedChat.id)
+                            viewModel.closeChat()
+                        },
                         onAcceptChat = {
                             val req = requests.find { it.chatId == selectedChat.id && it.toDeviceId == currentDevice.id }
                             if (req != null) {
@@ -131,6 +136,7 @@ fun WaslaApp(viewModel: WaslaViewModel) {
                         onSelectTab = { tab -> viewModel.selectTab(tab) },
                         onTogglePresence = { viewModel.togglePresence() },
                         onOpenChat = { id -> viewModel.openChat(id) },
+                        onDeleteChat = { id -> viewModel.deleteChat(id) },
                         onNewRequest = { viewModel.showNewRequest(true) },
                         onNewGroup = { viewModel.showNewGroup(true) },
                         onRespondRequest = { id, accept -> viewModel.respondToRequest(id, accept) },

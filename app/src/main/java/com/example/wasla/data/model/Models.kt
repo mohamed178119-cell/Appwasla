@@ -23,7 +23,8 @@ data class Message(
     val chatId: String,
     val senderId: String,
     val senderCode: String? = null,
-    val text: String,
+    val text: String = "",
+    val imageUri: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -34,6 +35,8 @@ data class ChatRequest(
     val toDeviceId: String,
     val fromCode: String,
     val toCode: String,
+    val fromDisplayName: String = "",
+    val toDisplayName: String = "",
     val status: String = "pending", // pending, accepted, rejected
     val createdAt: Long = System.currentTimeMillis()
 )

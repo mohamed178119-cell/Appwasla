@@ -2,12 +2,14 @@ package com.example.wasla.data.cloud
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Base64
 import com.example.wasla.data.db.WaslaDatabaseHelper
 import com.example.wasla.data.model.Chat
 import com.example.wasla.data.model.ChatMember
 import com.example.wasla.data.model.ChatRequest
 import com.example.wasla.data.model.Device
 import com.example.wasla.data.model.Message
+import com.example.wasla.data.util.WaslaImageUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +24,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 enum class CloudStatus {
@@ -35,7 +38,7 @@ data class CloudConfig(
     val serverUrl: String,
     val isEnabled: Boolean = true,
     val lastSyncTime: Long = 0L,
-    val statusMessage: String = "جاهز للمزامنة"
+    val statusMessage: String = "متصل"
 )
 
 class WaslaCloudSyncManager(
@@ -45,23 +48,22 @@ class WaslaCloudSyncManager(
     private val prefs: SharedPreferences = context.getSharedPreferences("wasla_cloud_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        // Default public demo Firebase Realtime Database endpoint for Wasla
         const val DEFAULT_FIREBASE_URL = "https://wasla-chat-app-default-rtdb.firebaseio.com"
         private const val PREF_KEY_SERVER_URL = "cloud_server_url"
         private const val PREF_KEY_CLOUD_ENABLED = "cloud_sync_enabled"
     }
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .writeTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .writeTimeout(6, TimeUnit.SECONDS)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val scope = CoroutineScope(Dispatchers.IO)
     private var syncJob: Job? = null
 
-    private val _cloudStatus = MutableStateFlow(CloudStatus.OFFLINE_LOCAL)
+    private val _cloudStatus = MutableStateFlow(CloudStatus.CONNECTED)
     val cloudStatus: StateFlow<CloudStatus> = _cloudStatus.asStateFlow()
 
     private val _config = MutableStateFlow(
@@ -72,7 +74,6 @@ class WaslaCloudSyncManager(
     )
     val config: StateFlow<CloudConfig> = _config.asStateFlow()
 
-    // Listener callback for when new data arrives from cloud
     var onDataSynchronized: (() -> Unit)? = null
 
     init {
@@ -104,7 +105,7 @@ class WaslaCloudSyncManager(
                 if (_config.value.isEnabled) {
                     performSync()
                 }
-                delay(4000) // Poll every 4 seconds
+                delay(1600) // Fast near real-time polling (1.6 seconds)
             }
         }
     }
@@ -131,10 +132,9 @@ class WaslaCloudSyncManager(
         }
 
         try {
-            _cloudStatus.value = CloudStatus.SYNCING
             val baseUrl = getNormalizedBaseUrl()
 
-            // 1. Publish our device identity & presence to Cloud
+            // 1. Publish our device identity & presence
             publishDevicePresence(baseUrl, currentDevice)
 
             // 2. Fetch incoming requests addressed to our device code
@@ -146,7 +146,7 @@ class WaslaCloudSyncManager(
             _cloudStatus.value = CloudStatus.CONNECTED
             _config.value = _config.value.copy(
                 lastSyncTime = System.currentTimeMillis(),
-                statusMessage = "متصل بالسحابة • كل شيء محدث"
+                statusMessage = "متصل"
             )
 
             if (hasNewRequests || hasNewMessages) {
@@ -154,28 +154,26 @@ class WaslaCloudSyncManager(
             }
         } catch (e: Exception) {
             _cloudStatus.value = CloudStatus.ERROR
-            _config.value = _config.value.copy(
-                statusMessage = "تعذر الاتصال بالسحابة: ${e.localizedMessage ?: "خطأ في الشبكة"}"
-            )
         }
     }
 
-    // Publish current device
     private fun publishDevicePresence(baseUrl: String, device: Device) {
-        val bodyJson = JSONObject().apply {
-            put("id", device.id)
-            put("code", device.code)
-            put("displayName", device.displayName)
-            put("online", device.online)
-            put("lastSeen", System.currentTimeMillis())
-        }
+        try {
+            val bodyJson = JSONObject().apply {
+                put("id", device.id)
+                put("code", device.code)
+                put("displayName", device.displayName)
+                put("online", device.online)
+                put("lastSeen", System.currentTimeMillis())
+            }
 
-        val request = Request.Builder()
-            .url("$baseUrl/wasla/devices/${device.code}.json")
-            .put(bodyJson.toString().toRequestBody(jsonMediaType))
-            .build()
+            val request = Request.Builder()
+                .url("$baseUrl/wasla/devices/${device.code}.json")
+                .put(bodyJson.toString().toRequestBody(jsonMediaType))
+                .build()
 
-        client.newCall(request).execute().close()
+            client.newCall(request).execute().close()
+        } catch (_: Exception) {}
     }
 
     // Publish an outgoing chat request to the recipient's inbox on the cloud
@@ -183,6 +181,9 @@ class WaslaCloudSyncManager(
         scope.launch {
             try {
                 val baseUrl = getNormalizedBaseUrl()
+                val currentDevice = dbHelper.getDevice()
+                val fromName = request.fromDisplayName.ifBlank { currentDevice?.displayName ?: "" }
+
                 val bodyJson = JSONObject().apply {
                     put("id", request.id)
                     put("chatId", request.chatId)
@@ -190,6 +191,8 @@ class WaslaCloudSyncManager(
                     put("toDeviceId", request.toDeviceId)
                     put("fromCode", request.fromCode)
                     put("toCode", request.toCode)
+                    put("fromDisplayName", fromName)
+                    put("toDisplayName", request.toDisplayName)
                     put("status", request.status)
                     put("createdAt", request.createdAt)
                 }
@@ -206,52 +209,65 @@ class WaslaCloudSyncManager(
                 val chatJson = JSONObject().apply {
                     put("id", request.chatId)
                     put("type", "direct")
-                    put("name", "وصلة ${request.fromCode}")
+                    put("name", fromName.ifBlank { "وصلة ${request.fromCode}" })
                     put("status", "pending_incoming")
                     put("updatedAt", request.createdAt)
                     put("senderCode", request.fromCode)
                     put("targetCode", request.toCode)
+                    put("fromDisplayName", fromName)
                 }
                 val chatHttpReq = Request.Builder()
                     .url("$baseUrl/wasla/chats/${request.chatId}.json")
                     .put(chatJson.toString().toRequestBody(jsonMediaType))
                     .build()
                 client.newCall(chatHttpReq).execute().close()
-            } catch (e: Exception) {
-                // Keep local if cloud fails
-            }
+
+                triggerImmediateSync()
+            } catch (_: Exception) {}
         }
     }
 
-    // Update request status (e.g. accepted / rejected) in cloud
+    // Update request status (e.g. accepted / rejected) in cloud with responder's display name
     fun uploadRequestStatus(request: ChatRequest, newStatus: String) {
         scope.launch {
             try {
                 val baseUrl = getNormalizedBaseUrl()
+                val currentDevice = dbHelper.getDevice()
+                val myDisplayName = currentDevice?.displayName ?: ""
+
                 val bodyJson = JSONObject().apply {
                     put("status", newStatus)
+                    if (newStatus == "accepted") {
+                        put("toDisplayName", myDisplayName)
+                    }
                 }
 
                 val httpReq = Request.Builder()
-                    .url("$baseUrl/wasla/requests/${request.toCode}/${request.id}/status.json")
-                    .put(bodyJson.toString().toRequestBody(jsonMediaType))
+                    .url("$baseUrl/wasla/requests/${request.toCode}/${request.id}.json")
+                    .patch(bodyJson.toString().toRequestBody(jsonMediaType))
                     .build()
                 client.newCall(httpReq).execute().close()
 
-                // Also update chat status
+                // Also update chat status and display name
                 val chatStatus = if (newStatus == "accepted") "active" else "rejected"
+                val chatPatchJson = JSONObject().apply {
+                    put("status", chatStatus)
+                    if (newStatus == "accepted") {
+                        put("toDisplayName", myDisplayName)
+                    }
+                }
                 val chatHttpReq = Request.Builder()
-                    .url("$baseUrl/wasla/chats/${request.chatId}/status.json")
-                    .put("\"$chatStatus\"".toRequestBody(jsonMediaType))
+                    .url("$baseUrl/wasla/chats/${request.chatId}.json")
+                    .patch(chatPatchJson.toString().toRequestBody(jsonMediaType))
                     .build()
                 client.newCall(chatHttpReq).execute().close()
-            } catch (e: Exception) {
-                // Ignore
-            }
+
+                triggerImmediateSync()
+            } catch (_: Exception) {}
         }
     }
 
-    // Upload a message to cloud
+    // Upload a message (text and/or image) to cloud
     fun uploadMessage(message: Message) {
         scope.launch {
             try {
@@ -263,6 +279,18 @@ class WaslaCloudSyncManager(
                     put("senderCode", message.senderCode)
                     put("text", message.text)
                     put("createdAt", message.createdAt)
+
+                    // If message contains an image, send as base64
+                    if (!message.imageUri.isNullOrBlank()) {
+                        try {
+                            val imgFile = File(message.imageUri)
+                            if (imgFile.exists()) {
+                                val bytes = imgFile.readBytes()
+                                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                put("imageBase64", base64)
+                            }
+                        } catch (_: Exception) {}
+                    }
                 }
 
                 val httpReq = Request.Builder()
@@ -271,9 +299,27 @@ class WaslaCloudSyncManager(
                     .build()
 
                 client.newCall(httpReq).execute().close()
-            } catch (e: Exception) {
-                // Retained in local SQLite
-            }
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Delete chat from cloud
+    fun deleteChatFromCloud(chatId: String) {
+        scope.launch {
+            try {
+                val baseUrl = getNormalizedBaseUrl()
+                val httpReq = Request.Builder()
+                    .url("$baseUrl/wasla/messages/$chatId.json")
+                    .delete()
+                    .build()
+                client.newCall(httpReq).execute().close()
+
+                val chatDeleteReq = Request.Builder()
+                    .url("$baseUrl/wasla/chats/$chatId.json")
+                    .delete()
+                    .build()
+                client.newCall(chatDeleteReq).execute().close()
+            } catch (_: Exception) {}
         }
     }
 
@@ -285,90 +331,101 @@ class WaslaCloudSyncManager(
             .get()
             .build()
 
-        client.newCall(httpReq).execute().use { response ->
-            if (!response.isSuccessful) return false
-            val body = response.body?.string() ?: return false
-            if (body == "null" || body.isBlank()) return false
+        try {
+            client.newCall(httpReq).execute().use { response ->
+                if (!response.isSuccessful) return false
+                val body = response.body?.string() ?: return false
+                if (body == "null" || body.isBlank()) return false
 
-            val json = JSONObject(body)
-            val keys = json.keys()
-            val existingRequests = dbHelper.getAllRequests().associateBy { it.id }
+                val json = JSONObject(body)
+                val keys = json.keys()
+                val existingRequests = dbHelper.getAllRequests().associateBy { it.id }
 
-            while (keys.hasNext()) {
-                val reqId = keys.next()
-                val reqObj = json.optJSONObject(reqId) ?: continue
+                while (keys.hasNext()) {
+                    val reqId = keys.next()
+                    val reqObj = json.optJSONObject(reqId) ?: continue
 
-                val chatId = reqObj.optString("chatId")
-                val fromDeviceId = reqObj.optString("fromDeviceId")
-                val fromCode = reqObj.optString("fromCode")
-                val toCode = reqObj.optString("toCode")
-                val status = reqObj.optString("status", "pending")
-                val createdAt = reqObj.optLong("createdAt", System.currentTimeMillis())
+                    val chatId = reqObj.optString("chatId")
+                    val fromDeviceId = reqObj.optString("fromDeviceId")
+                    val fromCode = reqObj.optString("fromCode")
+                    val toCode = reqObj.optString("toCode")
+                    val fromDisplayName = reqObj.optString("fromDisplayName", "").ifBlank { "وصلة $fromCode" }
+                    val toDisplayName = reqObj.optString("toDisplayName", "")
+                    val status = reqObj.optString("status", "pending")
+                    val createdAt = reqObj.optLong("createdAt", System.currentTimeMillis())
 
-                if (!existingRequests.containsKey(reqId)) {
-                    hasNew = true
-                    // Create local chat if doesn't exist
-                    val existingChat = dbHelper.getChatById(chatId)
-                    if (existingChat == null) {
-                        val chat = Chat(
-                            id = chatId,
-                            type = "direct",
-                            name = "وصلة $fromCode",
-                            status = if (status == "accepted") "active" else "pending_incoming",
-                            updatedAt = createdAt
-                        )
-                        dbHelper.saveChat(chat)
-
-                        // Member: me
-                        dbHelper.saveChatMember(
-                            ChatMember(
-                                id = java.util.UUID.randomUUID().toString(),
-                                chatId = chatId,
-                                deviceId = currentDevice.id,
-                                code = currentDevice.code,
-                                displayName = currentDevice.displayName,
-                                online = currentDevice.online,
-                                status = "pending_incoming"
-                            )
-                        )
-                        // Member: sender
-                        dbHelper.saveChatMember(
-                            ChatMember(
-                                id = java.util.UUID.randomUUID().toString(),
-                                chatId = chatId,
-                                deviceId = fromDeviceId,
-                                code = fromCode,
-                                displayName = "وصلة $fromCode",
-                                online = true,
-                                status = "pending_outgoing"
-                            )
-                        )
-                    }
-
-                    dbHelper.saveRequest(
-                        ChatRequest(
-                            id = reqId,
-                            chatId = chatId,
-                            fromDeviceId = fromDeviceId,
-                            toDeviceId = currentDevice.id,
-                            fromCode = fromCode,
-                            toCode = toCode,
-                            status = status,
-                            createdAt = createdAt
-                        )
-                    )
-                } else {
-                    // Update status if changed remotely
-                    val localReq = existingRequests[reqId]
-                    if (localReq != null && localReq.status != status) {
-                        dbHelper.updateRequestStatus(reqId, status)
-                        val chatStatus = if (status == "accepted") "active" else "rejected"
-                        dbHelper.updateChatStatus(chatId, chatStatus)
+                    if (!existingRequests.containsKey(reqId)) {
                         hasNew = true
+                        val existingChat = dbHelper.getChatById(chatId)
+                        if (existingChat == null) {
+                            val chat = Chat(
+                                id = chatId,
+                                type = "direct",
+                                name = fromDisplayName, // Registered display name of the sender!
+                                status = if (status == "accepted") "active" else "pending_incoming",
+                                updatedAt = createdAt
+                            )
+                            dbHelper.saveChat(chat)
+
+                            // Member: me
+                            dbHelper.saveChatMember(
+                                ChatMember(
+                                    id = java.util.UUID.randomUUID().toString(),
+                                    chatId = chatId,
+                                    deviceId = currentDevice.id,
+                                    code = currentDevice.code,
+                                    displayName = currentDevice.displayName,
+                                    online = currentDevice.online,
+                                    status = "pending_incoming"
+                                )
+                            )
+                            // Member: sender
+                            dbHelper.saveChatMember(
+                                ChatMember(
+                                    id = java.util.UUID.randomUUID().toString(),
+                                    chatId = chatId,
+                                    deviceId = fromDeviceId,
+                                    code = fromCode,
+                                    displayName = fromDisplayName,
+                                    online = true,
+                                    status = "pending_outgoing"
+                                )
+                            )
+                        }
+
+                        dbHelper.saveRequest(
+                            ChatRequest(
+                                id = reqId,
+                                chatId = chatId,
+                                fromDeviceId = fromDeviceId,
+                                toDeviceId = currentDevice.id,
+                                fromCode = fromCode,
+                                toCode = toCode,
+                                fromDisplayName = fromDisplayName,
+                                toDisplayName = toDisplayName,
+                                status = status,
+                                createdAt = createdAt
+                            )
+                        )
+                    } else {
+                        // Update status and mutual display names if changed
+                        val localReq = existingRequests[reqId]
+                        if (localReq != null && (localReq.status != status || (toDisplayName.isNotBlank() && localReq.toDisplayName != toDisplayName))) {
+                            dbHelper.updateRequestStatus(reqId, status)
+                            val chatStatus = if (status == "accepted") "active" else "rejected"
+                            dbHelper.updateChatStatus(chatId, chatStatus)
+
+                            // If recipient accepted, and we are the sender, update chat name to recipient's display name!
+                            if (toDisplayName.isNotBlank() && localReq.fromDeviceId == currentDevice.id) {
+                                dbHelper.updateChatName(chatId, toDisplayName)
+                            }
+                            hasNew = true
+                        }
                     }
                 }
             }
-        }
+        } catch (_: Exception) {}
+
         return hasNew
     }
 
@@ -402,6 +459,13 @@ class WaslaCloudSyncManager(
                             val text = msgObj.optString("text")
                             val createdAt = msgObj.optLong("createdAt", System.currentTimeMillis())
 
+                            // Decode image if present
+                            val imageBase64 = msgObj.optString("imageBase64", "")
+                            var localImagePath: String? = null
+                            if (imageBase64.isNotBlank()) {
+                                localImagePath = WaslaImageUtils.saveBase64Image(context, imageBase64)
+                            }
+
                             dbHelper.saveMessage(
                                 Message(
                                     id = msgId,
@@ -409,6 +473,7 @@ class WaslaCloudSyncManager(
                                     senderId = senderId,
                                     senderCode = senderCode,
                                     text = text,
+                                    imageUri = localImagePath,
                                     createdAt = createdAt
                                 )
                             )
@@ -416,9 +481,7 @@ class WaslaCloudSyncManager(
                         }
                     }
                 }
-            } catch (e: Exception) {
-                // Continue to next chat
-            }
+            } catch (_: Exception) {}
         }
         return hasNew
     }

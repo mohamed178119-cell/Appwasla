@@ -136,6 +136,18 @@ class WaslaViewModel(application: Application) : AndroidViewModel(application) {
         repository.sendMessage(chatId, text)
     }
 
+    fun sendImageMessage(chatId: String, imagePath: String, caption: String = "") {
+        repository.sendImageMessage(chatId, imagePath, caption)
+    }
+
+    fun deleteChat(chatId: String) {
+        if (_activeChatId.value == chatId) {
+            _activeChatId.value = null
+        }
+        repository.deleteChat(chatId)
+        showToast("تم حذف المحادثة")
+    }
+
     fun simulateIncomingRequest() {
         repository.simulateIncomingNewRequest()
         showToast("وصل طلب محادثة جديد!")

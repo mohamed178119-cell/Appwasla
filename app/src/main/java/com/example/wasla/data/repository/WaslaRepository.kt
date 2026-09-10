@@ -225,6 +225,8 @@ class WaslaRepository(context: Context) {
             toDeviceId = targetDeviceId,
             fromCode = current.code,
             toCode = normalizedCode,
+            fromDisplayName = current.displayName,
+            toDisplayName = "",
             status = "pending",
             createdAt = System.currentTimeMillis()
         )
@@ -236,6 +238,12 @@ class WaslaRepository(context: Context) {
         cloudSyncManager.uploadChatRequest(request)
 
         return Result.success(request)
+    }
+
+    fun deleteChat(chatId: String) {
+        dbHelper.deleteChat(chatId)
+        cloudSyncManager.deleteChatFromCloud(chatId)
+        refreshData()
     }
 
     fun createGroup(name: String, memberCodes: List<String>): Result<Chat> {
@@ -310,6 +318,10 @@ class WaslaRepository(context: Context) {
             val chatStatus = if (accept) "active" else "rejected"
             dbHelper.updateChatStatus(request.chatId, chatStatus)
             if (accept) {
+                // Ensure chat displays sender's registered name
+                val senderName = request.fromDisplayName.ifBlank { "وصلة ${request.fromCode}" }
+                dbHelper.updateChatName(request.chatId, senderName)
+
                 val acceptMsg = Message(
                     id = UUID.randomUUID().toString(),
                     chatId = request.chatId,
@@ -337,12 +349,32 @@ class WaslaRepository(context: Context) {
             senderId = current.id,
             senderCode = current.code,
             text = trimmed,
+            imageUri = null,
             createdAt = System.currentTimeMillis()
         )
         dbHelper.saveMessage(message)
         refreshData()
 
-        // Upload message to cloud so other device receives it in real-time
+        // Upload message to cloud so other device receives it immediately
+        cloudSyncManager.uploadMessage(message)
+    }
+
+    fun sendImageMessage(chatId: String, imagePath: String, caption: String = "") {
+        val current = _device.value ?: return
+
+        val message = Message(
+            id = UUID.randomUUID().toString(),
+            chatId = chatId,
+            senderId = current.id,
+            senderCode = current.code,
+            text = caption.trim(),
+            imageUri = imagePath,
+            createdAt = System.currentTimeMillis()
+        )
+        dbHelper.saveMessage(message)
+        refreshData()
+
+        // Upload message with image to cloud immediately
         cloudSyncManager.uploadMessage(message)
     }
 

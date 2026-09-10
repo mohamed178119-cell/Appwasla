@@ -14,7 +14,7 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
 
     companion object {
         const val DATABASE_NAME = "wasla.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -65,6 +65,8 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                 to_device_id TEXT NOT NULL,
                 from_code TEXT NOT NULL,
                 to_code TEXT NOT NULL,
+                from_display_name TEXT NOT NULL DEFAULT '',
+                to_display_name TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at INTEGER NOT NULL
             )
@@ -79,6 +81,7 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                 sender_id TEXT NOT NULL,
                 sender_code TEXT,
                 text TEXT NOT NULL,
+                image_uri TEXT,
                 created_at INTEGER NOT NULL
             )
             """.trimIndent()
@@ -86,12 +89,11 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS messages")
-        db.execSQL("DROP TABLE IF EXISTS chat_requests")
-        db.execSQL("DROP TABLE IF EXISTS chat_members")
-        db.execSQL("DROP TABLE IF EXISTS chats")
-        db.execSQL("DROP TABLE IF EXISTS devices")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try { db.execSQL("ALTER TABLE messages ADD COLUMN image_uri TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE chat_requests ADD COLUMN from_display_name TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE chat_requests ADD COLUMN to_display_name TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
+        }
     }
 
     private val sharedPrefs = context.getSharedPreferences("wasla_db_prefs", Context.MODE_PRIVATE)
@@ -296,6 +298,25 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
         }
     }
 
+    // Delete chat and all associated data
+    fun deleteChat(chatId: String) {
+        writableDatabase.use { db ->
+            db.delete("chats", "id = ?", arrayOf(chatId))
+            db.delete("chat_members", "chat_id = ?", arrayOf(chatId))
+            db.delete("messages", "chat_id = ?", arrayOf(chatId))
+            db.delete("chat_requests", "chat_id = ?", arrayOf(chatId))
+        }
+    }
+
+    fun updateChatName(chatId: String, newName: String) {
+        writableDatabase.use { db ->
+            val values = ContentValues().apply {
+                put("name", newName)
+            }
+            db.update("chats", values, "id = ?", arrayOf(chatId))
+        }
+    }
+
     // Messages
     fun saveMessage(message: Message) {
         writableDatabase.use { db ->
@@ -305,6 +326,7 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                 put("sender_id", message.senderId)
                 put("sender_code", message.senderCode)
                 put("text", message.text)
+                put("image_uri", message.imageUri)
                 put("created_at", message.createdAt)
             }
             db.insertWithOnConflict("messages", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -322,6 +344,8 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
         val cursor = db.query("messages", null, "chat_id = ?", arrayOf(chatId), null, null, "created_at ASC")
         cursor.use {
             while (it.moveToNext()) {
+                val imgIndex = it.getColumnIndex("image_uri")
+                val imgUri = if (imgIndex != -1 && !it.isNull(imgIndex)) it.getString(imgIndex) else null
                 messages.add(
                     Message(
                         id = it.getString(it.getColumnIndexOrThrow("id")),
@@ -329,6 +353,7 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                         senderId = it.getString(it.getColumnIndexOrThrow("sender_id")),
                         senderCode = it.getString(it.getColumnIndexOrThrow("sender_code")),
                         text = it.getString(it.getColumnIndexOrThrow("text")),
+                        imageUri = imgUri,
                         createdAt = it.getLong(it.getColumnIndexOrThrow("created_at"))
                     )
                 )
@@ -347,6 +372,8 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                 put("to_device_id", request.toDeviceId)
                 put("from_code", request.fromCode)
                 put("to_code", request.toCode)
+                put("from_display_name", request.fromDisplayName)
+                put("to_display_name", request.toDisplayName)
                 put("status", request.status)
                 put("created_at", request.createdAt)
             }
@@ -369,6 +396,11 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
             val cursor = db.query("chat_requests", null, null, null, null, null, "created_at DESC")
             cursor.use {
                 while (it.moveToNext()) {
+                    val fromNameIndex = it.getColumnIndex("from_display_name")
+                    val toNameIndex = it.getColumnIndex("to_display_name")
+                    val fromName = if (fromNameIndex != -1 && !it.isNull(fromNameIndex)) it.getString(fromNameIndex) else ""
+                    val toName = if (toNameIndex != -1 && !it.isNull(toNameIndex)) it.getString(toNameIndex) else ""
+
                     requests.add(
                         ChatRequest(
                             id = it.getString(it.getColumnIndexOrThrow("id")),
@@ -377,6 +409,8 @@ class WaslaDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE
                             toDeviceId = it.getString(it.getColumnIndexOrThrow("to_device_id")),
                             fromCode = it.getString(it.getColumnIndexOrThrow("from_code")),
                             toCode = it.getString(it.getColumnIndexOrThrow("to_code")),
+                            fromDisplayName = fromName,
+                            toDisplayName = toName,
                             status = it.getString(it.getColumnIndexOrThrow("status")),
                             createdAt = it.getLong(it.getColumnIndexOrThrow("created_at"))
                         )
